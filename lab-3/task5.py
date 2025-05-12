@@ -28,7 +28,7 @@ class EnhancedLightNode(LightNode, StatefulNode, IterableLightNode,
         CommandableLightNode.__init__(self)
         LifecycleLightNode.__init__(self)
 
-class EnhancedElementNode(LightElementNode, EnhancedLightNode): 
+class EnhancedElementNode(LightElementNode, EnhancedLightNode):  
     """Розширений клас елемента з підтримкою всіх функцій"""
     def __init__(self, tag_name: str, display_type=DisplayType.BLOCK,
                  closure_type=ClosureType.PAIRED):
@@ -60,7 +60,7 @@ class EnhancedElementNode(LightElementNode, EnhancedLightNode):
         
         return "".join(result)
 
-class EnhancedTextNode(LightTextNode, EnhancedLightNode):  
+class EnhancedTextNode(LightTextNode, EnhancedLightNode): 
     """Розширений клас текстового вузла з підтримкою всіх функцій"""
     def __init__(self, text: str):
         LightTextNode.__init__(self, text)
@@ -86,7 +86,6 @@ def main():
     Автор: dmytromalisevych
     Дата створення: 2025-05-12 17:54:46
     """
-    # Створення елементів
     table = create_element("table")
     table.add_class("styled-table")
 
