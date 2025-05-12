@@ -1,51 +1,10 @@
-from .base import (
-    DisplayType,
-    ClosureType,
-    LightNode,
-    LightElementNode,
-    LightTextNode
-)
+from .base import DisplayType, ClosureType, LightNode, LightElementNode, LightTextNode
+from .visitors import HTMLValidator, StyleCollector, NodeMetricsCollector, AccessibilityChecker
+from .states import VisibilityState, StatefulNode
+from .iterators import TraversalType, IterableLightNode
+from .commands import AddNodeCommand, CommandableLightNode
+from .lifecycle import LifecycleEvent, LifecycleLightNode
 
-from .lifecycle import (
-    LifecycleEvent,
-    LifecycleLightNode
-)
-
-from .iterators import (
-    TraversalType,
-    NodeIterator,
-    DepthFirstIterator,
-    BreadthFirstIterator,
-    IterableLightNode
-)
-
-from .commands import (
-    Command,
-    AddNodeCommand,
-    RemoveNodeCommand,
-    CommandHistory,
-    CommandableLightNode
-)
-
-from .states import (
-    NodeState,
-    VisibilityState,
-    VisibleState,
-    HiddenState,
-    CollapsedState,
-    StatefulNode
-)
-
-from .visitors import (
-    NodeVisitor,
-    HTMLValidator,
-    StyleCollector,
-    VisitableNode
-)
-
-__version__ = '1.0.0'
-
-__author__ = 'dmytromalisevych'
 
 __all__ = [
     'DisplayType',
@@ -79,5 +38,6 @@ __all__ = [
     'NodeVisitor',
     'HTMLValidator',
     'StyleCollector',
-    'VisitableNode'
+    'NodeMetricsCollector',
+    'AccessibilityChecker'
 ]
