@@ -3,13 +3,13 @@ from enum import Enum, auto
 
 class DisplayType(Enum):
     """Тип відображення елемента"""
-    BLOCK = auto() 
+    BLOCK = auto()   
     INLINE = auto()  
 
 class ClosureType(Enum):
     """Тип закриття тегу"""
-    SELF_CLOSING = auto() 
-    PAIRED = auto()      
+    SELF_CLOSING = auto()  
+    PAIRED = auto()        
 
 class LightNode(ABC):
     """Базовий абстрактний клас для всіх вузлів"""
@@ -66,6 +66,7 @@ class LightElementNode(LightNode):
         
         result.append(f"{indentation}<{self.tag_name}")
         
+
         if self.css_classes:
             class_list = " ".join(self.css_classes)
             result.append(f' class="{class_list}"')
@@ -104,19 +105,3 @@ class LightTextNode(LightNode):
     def add_class(self, css_class: str):
         """Текстові вузли не можуть мати CSS класів"""
         raise ValueError("Текстовий вузол не може мати CSS класів")
-
-if __name__ == "__main__":
-    div = LightElementNode("div")
-    p = LightElementNode("p", display_type=DisplayType.BLOCK)
-    text = LightTextNode("Привіт, світ!")
-    img = LightElementNode("img", closure_type=ClosureType.SELF_CLOSING)
-    
-    div.add_child(p)
-    p.add_child(text)
-    div.add_child(img)
-
-    div.add_class("container")
-    p.add_class("text-center")
-    img.add_class("img-fluid")
-    
-    print(div.render())
