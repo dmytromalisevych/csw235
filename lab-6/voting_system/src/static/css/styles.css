@@ -1,0 +1,29 @@
+.poll-card {
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.poll-option {
+    margin: 10px 0;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.poll-option:hover {
+    background-color: #f8f9fa;
+}
+
+.poll-option.selected {
+    background-color: #e3f2fd;
+    border-color: #90caf9;
+}
+
+.results-bar {
+    height: 20px;
+    background-color: #007bff;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
