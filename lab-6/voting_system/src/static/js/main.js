@@ -60,3 +60,71 @@ async function handleVote(optionElement) {
         console.error('Error submitting vote:', error);
     }
 }
+async function submitVote(pollId) {
+    const pollContainer = document.querySelector(`[data-poll-id="${pollId}"]`);
+    const selectedOptions = Array.from(pollContainer.querySelectorAll('input:checked'))
+        .map(input => input.value);
+
+    if (selectedOptions.length === 0) {
+        alert('Будь ласка, виберіть варіант відповіді');
+        return;
+    }
+
+    try {
+        const response = await fetch('/vote', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                poll_id: pollId,
+                option_ids: selectedOptions
+            })
+        });
+
+        if (response.ok) {
+            alert('Ваш голос враховано!');
+            location.reload();
+        } else {
+            alert('Помилка при голосуванні');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Помилка при відправці голосу');
+    }
+}
+async function submitVote(pollId) {
+    try {
+        const pollForm = document.querySelector(`[data-poll-id="${pollId}"]`);
+        const selectedInputs = pollForm.querySelectorAll('input:checked');
+        
+        if (selectedInputs.length === 0) {
+            alert('Будь ласка, виберіть варіант відповіді');
+            return;
+        }
+
+        const selectedOptionIds = Array.from(selectedInputs).map(input => input.value);
+
+        const response = await fetch('/vote', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                poll_id: pollId,
+                option_ids: selectedOptionIds
+            })
+        });
+
+        if (response.ok) {
+            alert('Дякуємо за ваш голос!');
+            window.location.reload(); 
+        } else {
+            const error = await response.json();
+            alert(error.detail || 'Помилка при голосуванні');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Виникла помилка при спробі проголосувати');
+    }
+}

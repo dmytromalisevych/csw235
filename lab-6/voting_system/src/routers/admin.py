@@ -1,41 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Form
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from database.database import get_db
-from database.models import Poll, PollOption
 from typing import List
-import secrets
+from database.database import get_db
+from schemas.poll_schema import PollCreate, PollResponse
+from services.poll_service import PollService
 
 router = APIRouter()
-templates = Jinja2Templates(directory="src/templates")
 
-@router.get("/", response_class=HTMLResponse)
-async def admin_panel(request: Request):
-    return templates.TemplateResponse(
-        "admin/index.html",
-        {"request": request}
-    )
+@router.post("/polls/", response_model=PollResponse)
+def create_poll(poll_data: PollCreate, db: Session = Depends(get_db)):
+    try:
+        return PollService.create_poll(db, poll_data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/polls")
-async def create_poll(
-    title: str = Form(...),
-    description: str = Form(...),
-    options: List[str] = Form(...),
-    allow_multiple: bool = Form(False),
-    db: Session = Depends(get_db)
-):
-    poll = Poll(
-        title=title,
-        description=description,
-        allow_multiple=allow_multiple
-    )
-    db.add(poll)
-    db.flush()
-
-    for option in options:
-        poll_option = PollOption(poll_id=poll.id, text=option)
-        db.add(poll_option)
-
-    db.commit()
-    return {"status": "success", "poll_id": poll.id}
+@router.get("/polls/", response_model=List[PollResponse])
+def get_polls(db: Session = Depends(get_db)):
+    return PollService.get_active_polls(db)
