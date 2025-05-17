@@ -1,20 +1,24 @@
 import os
 import logging
+import bcrypt
 from pathlib import Path
+from sqlalchemy import func, or_
 
+from database.database import get_db, init_db
 from fastapi import FastAPI, Depends, HTTPException, Response, status, Request
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from datetime import datetime, timedelta
 from typing import List, Optional
 from jose import JWTError, jwt
 
-from database.models import User, Poll, Vote
+
+from database.models import User, Poll, Vote, PollOption
 from database import SessionLocal, engine
 from schemas.poll_schema import UserCreate, PollCreate, VoteCreate, Poll as PollSchema, User as UserSchema, VoteResponse
 from services.poll_service import (
@@ -52,7 +56,17 @@ app.add_middleware(
 SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
+@app.on_event("startup")
+async def startup_event():
+    """
+    При запуску додатку перевіряємо з'єднання з існуючою БД
+    """
+    try:
+        init_db()
+        logger.info("Successfully connected to existing database")
+    except Exception as e:
+        logger.error(f"Error during startup: {str(e)}")
+        raise
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 def get_db():
@@ -69,97 +83,269 @@ def create_access_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    if token is None:
+async def get_current_user(request: Request):
+    token = request.cookies.get("access_token")
+    if not token:
         return None
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        token_type, _, token_value = token.partition(" ")
+        if token_type.lower() != "bearer":
             return None
-    except JWTError:
+        
+        payload = jwt.decode(token_value, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            return None
+            
+        db = SessionLocal()
+        user = db.query(User).filter(User.username == username).first()
+        db.close()
+        return user
+    except:
         return None
-    
-    user = get_user_by_username(db, username)
-    return user
 
-@app.get("/")
-async def home(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@app.get("/poll/{poll_id}/results")
+async def poll_results(request: Request, poll_id: int, db: Session = Depends(get_db)):
     try:
-        active_polls = get_active_polls(db)
-        template_data = {
-            "request": request,
-            "user": current_user,
-            "polls": active_polls,
-            "debug_message": "This is a debug message"
-        }
-
-        print("Rendering template with data:", template_data)
+        poll = db.query(Poll).filter(Poll.id == poll_id).first()
+        if not poll:
+            raise HTTPException(status_code=404, detail="Голосування не знайдено")
+        
+        options_with_votes = []
+        total_votes = 0
+        
+        for option in poll.options:
+            votes_count = db.query(Vote).filter(Vote.option_id == option.id).count()
+            total_votes += votes_count
+            options_with_votes.append({
+                "id": option.id,
+                "text": option.text,
+                "votes": votes_count,
+                "percentage": round((votes_count / total_votes * 100) if total_votes > 0 else 0, 1)
+            })
         
         return templates.TemplateResponse(
-            "index.html",
-            template_data
-        )
-    except Exception as e:
-        import traceback
-        print("Error occurred:")
-        print(traceback.format_exc())
-        
-        return templates.TemplateResponse(
-            "404.html",
+            "poll_results.html",
             {
                 "request": request,
-                "error_message": str(e)
-            },
-            status_code=500
+                "poll": poll,
+                "options": options_with_votes,
+                "total_votes": total_votes,
+                "current_user": await get_current_user(request)
+            }
         )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error showing poll results: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.delete("/api/polls/{poll_id}")
+async def delete_poll(
+    poll_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        if not current_user or not current_user.is_admin:
+            raise HTTPException(
+                status_code=403,
+                detail="Недостатньо прав для видалення опитування"
+            )
+        
+        poll = db.query(Poll).filter(Poll.id == poll_id).first()
+        if not poll:
+            raise HTTPException(
+                status_code=404,
+                detail="Опитування не знайдено"
+            )
+        
+        db.query(Vote).filter(Vote.poll_id == poll_id).delete()
+        
+        db.query(PollOption).filter(PollOption.poll_id == poll_id).delete()
+        
+        db.delete(poll)
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Опитування успішно видалено",
+            "deleted_at": "2025-05-17 21:50:38",
+            "deleted_by": "dmytromalisevych"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting poll: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Помилка при видаленні опитування"
+        )
+
+@app.get("/")
+async def home(request: Request, db: Session = Depends(get_db)):
+    try:
+        current_user = await get_current_user(request)
+        
+        polls = (
+            db.query(Poll)
+            .filter(Poll.is_active == True)
+            .order_by(Poll.created_at.desc())
+            .all()
+        )
+        
+        for poll in polls:
+            poll.options = db.query(PollOption).filter(PollOption.poll_id == poll.id).all()
+            
+            poll.total_votes = db.query(Vote).filter(Vote.poll_id == poll.id).count()
+            
+            if current_user:
+                poll.user_voted = db.query(Vote).filter(
+                    Vote.poll_id == poll.id,
+                    Vote.user_id == current_user.id
+                ).first() is not None
+            else:
+                poll.user_voted = False
+            
+            for option in poll.options:
+                option.votes_percent = (
+                    (option.votes_count / poll.total_votes * 100)
+                    if poll.total_votes > 0
+                    else 0
+                )
+
+        return templates.TemplateResponse(
+            "index.html",
+            {
+                "request": request,
+                "polls": polls,
+                "current_user": current_user
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error in home route: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
 @app.post("/login")
 async def login(
-    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
-    logger.info(f"Login attempt for user: {form_data.username}")
-    
     try:
         user = db.query(User).filter(User.username == form_data.username).first()
         
-        logger.info(f"Found user: {user}")
-        
         if not user:
-            logger.warning(f"User not found: {form_data.username}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Невірний логін або пароль"
             )
-            
-        if not verify_password(form_data.password, user.password_hash):
-            logger.warning(f"Invalid password for user: {form_data.username}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Невірний логін або пароль"
-            )
-            
-        access_token = create_access_token(data={"sub": user.username})
         
-        response = RedirectResponse(url="/", status_code=302)
+        valid_password = bcrypt.checkpw(
+            form_data.password.encode('utf-8'),
+            user.password_hash.encode('utf-8')
+        )
+        
+        if not valid_password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Невірний логін або пароль"
+            )
+        
+        access_token = create_access_token(
+            data={"sub": user.username, "is_admin": user.is_admin}
+        )
+        
+        response = JSONResponse(
+            content={
+                "access_token": access_token,
+                "token_type": "bearer",
+                "username": user.username,
+                "is_admin": user.is_admin
+            }
+        )
+        
         response.set_cookie(
             key="access_token",
             value=f"Bearer {access_token}",
             httponly=True,
             max_age=1800,
-            samesite="lax"
+            expires=1800,
+            samesite='lax',
+            secure=False  
         )
         
-        logger.info(f"Successful login for user: {form_data.username}")
         return response
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Login error: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Помилка при авторизації"
         )
+    
+@app.get("/register")
+async def register_page(request: Request):
+    return templates.TemplateResponse(
+        "register.html",
+        {"request": request, "title": "Реєстрація"}
+    )
+
+@app.post("/api/register")
+async def register_user(user_data: UserCreate):
+    try:
+        db = SessionLocal()
+        existing_user = db.query(User).filter(
+            or_(
+                User.username == user_data.username,
+                User.email == user_data.email
+            )
+        ).first()
+        
+        if existing_user:
+            raise HTTPException(
+                status_code=400,
+                detail="Користувач з таким логіном або email вже існує"
+            )
+        
+        hashed_password = bcrypt.hashpw(
+            user_data.password.encode('utf-8'),
+            bcrypt.gensalt()
+        ).decode('utf-8')
+        
+        new_user = User(
+            username=user_data.username,
+            email=user_data.email,
+            password_hash=hashed_password,
+            is_active=True,
+            is_admin=False
+        )
+        
+        db.add(new_user)
+        db.commit()
+        
+        return {"success": True, "message": "Реєстрація успішна"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Registration error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Помилка при реєстрації"
+        )
+    finally:
+        db.close()
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/")
+    response.delete_cookie("access_token")
+    return response
 
 @app.get("/")
 async def root(request: Request):
@@ -199,13 +385,39 @@ async def general_exception_handler(request, exc):
     )
 
 @app.get("/polls/active")
-async def get_active_polls(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
+async def get_active_polls(db: Session = Depends(get_db)):
     try:
-        polls = db.query(Poll).filter(Poll.is_active == True).all()
-        return {"polls": [poll.to_dict() for poll in polls]}
+        polls = (
+            db.query(Poll)
+            .filter(Poll.is_active == True)
+            .all()
+        )
+        
+        result = []
+        for poll in polls:
+            options = (
+                db.query(PollOption)
+                .filter(PollOption.poll_id == poll.id)
+                .all()
+            )
+            
+            poll_data = {
+                "id": poll.id,
+                "title": poll.title,
+                "description": poll.description,
+                "created_at": poll.created_at.isoformat() if poll.created_at else None,
+                "ends_at": poll.ends_at.isoformat() if poll.ends_at else None,
+                "is_active": poll.is_active,
+                "created_by": poll.created_by,
+                "options": [
+                    {"id": opt.id, "text": opt.text}
+                    for opt in options
+                ]
+            }
+            result.append(poll_data)
+        
+        return result
+        
     except Exception as e:
         logger.error(f"Error getting active polls: {str(e)}")
         raise HTTPException(
@@ -219,7 +431,6 @@ def read_poll(poll_id: int, db: Session = Depends(get_db)):
     if poll is None:
         raise HTTPException(status_code=404, detail="Poll not found")
     
-    # Підрахунок голосів
     for option in poll.options:
         option.votes_count = db.query(func.count(Vote.id))\
             .filter(Vote.option_id == option.id)\
@@ -227,67 +438,252 @@ def read_poll(poll_id: int, db: Session = Depends(get_db)):
     poll.total_votes = sum(option.votes_count for option in poll.options)
     return poll
 
-@app.post("/api/polls", response_model=PollSchema)
-def create_poll_endpoint(
-    poll: PollCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+@app.post("/api/polls")
+async def create_poll(
+    poll_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    if not current_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
+    if not current_user or not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Недостатньо прав")
+    
+    try:
+        new_poll = Poll(
+            title=poll_data["title"],
+            description=poll_data.get("description", ""),
+            is_active=True,
+            created_by=current_user.id
         )
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions"
-        )
-    return create_poll(db, poll, current_user.id)
+        db.add(new_poll)
+        db.flush()
 
-@app.post("/api/vote", response_model=VoteResponse)
-def create_vote_endpoint(
-    vote: VoteCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    if not current_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
-        )
-
-    poll = get_poll(db, vote.poll_id)
-    if not poll or not poll.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Poll is not active"
-        )
-
-    if poll.ends_at and poll.ends_at < datetime.utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Poll has ended"
-        )
-
-    if not poll.allow_multiple:
-        existing_vote = db.query(Vote)\
-            .filter(Vote.user_id == current_user.id, 
-                   Vote.poll_id == vote.poll_id)\
-            .first()
-        if existing_vote:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You have already voted in this poll"
+        for option_data in poll_data.get("options", []):
+            option = PollOption(
+                poll_id=new_poll.id,
+                text=option_data["text"],  
+                votes_count=0
             )
+            db.add(option)
 
-    success = create_vote(db, vote, current_user.id)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Could not create vote"
+        db.commit()
+        return {"success": True, "id": new_poll.id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/api/polls/{poll_id}/options")
+async def get_poll_options(poll_id: int, db: Session = Depends(get_db)):
+    try:
+        options = db.query(PollOption).filter(PollOption.poll_id == poll_id).all()
+        if not options:
+            raise HTTPException(status_code=404, detail="Варіанти відповідей не знайдено")
+        return {"options": [{"id": opt.id, "text": opt.text} for opt in options]}
+    except Exception as e:
+        logger.error(f"Error getting poll options: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin")
+async def admin_panel(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user or not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ заборонено")
+    
+    stats = {
+        "active_polls": db.query(Poll).filter(Poll.is_active == True).count(),
+        "total_users": db.query(User).count(),
+        "total_votes": db.query(Vote).count()
+    }
+    
+    polls = db.query(Poll).all()
+    for poll in polls:
+        poll.total_votes = db.query(Vote).filter(Vote.poll_id == poll.id).count()
+    
+    return templates.TemplateResponse(
+        "admin.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "stats": stats,
+            "polls": polls
+        }
+    )
+
+@app.post("/api/polls/{poll_id}/toggle")
+async def toggle_poll_status(
+    poll_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user or not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ заборонено")
+    
+    poll = db.query(Poll).filter(Poll.id == poll_id).first()
+    if not poll:
+        raise HTTPException(status_code=404, detail="Голосування не знайдено")
+    
+    poll.is_active = not poll.is_active
+    db.commit()
+    
+    return {"success": True}
+
+@app.post("/api/vote")
+async def vote(
+    vote_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Необхідно увійти для голосування")
+    
+    poll_id = vote_data.get("poll_id")
+    option_id = vote_data.get("option_id")
+    
+    try:
+        poll = db.query(Poll).filter(Poll.id == poll_id).first()
+        if not poll:
+            raise HTTPException(status_code=404, detail="Голосування не знайдено")
+            
+        if not poll.is_active:
+            raise HTTPException(status_code=400, detail="Голосування закрите")
+
+        existing_vote = db.query(Vote).filter(
+            Vote.poll_id == poll_id,
+            Vote.user_id == current_user.id
+        ).first()
+        
+        if existing_vote:
+            raise HTTPException(status_code=400, detail="Ви вже голосували в цьому опитуванні")
+        
+        option = db.query(PollOption).filter(
+            PollOption.id == option_id,
+            PollOption.poll_id == poll_id
+        ).first()
+        
+        if not option:
+            raise HTTPException(status_code=404, detail="Варіант відповіді не знайдено")
+
+        new_vote = Vote(
+            user_id=current_user.id,
+            poll_id=poll_id,
+            option_id=option_id,
+            voted_at=datetime.utcnow()
         )
-    return {"message": "Vote registered successfully"}
+        db.add(new_vote)
+        
+        option.votes_count += 1
+        
+        db.commit()
+        return {"success": True, "message": "Ваш голос враховано"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Vote error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/api/polls/{poll_id}/results")
+async def get_poll_results(
+    poll_id: int,
+    db: Session = Depends(get_db)
+):
+    try:
+        poll = db.query(Poll).filter(Poll.id == poll_id).first()
+        if not poll:
+            raise HTTPException(
+                status_code=404,
+                detail="Голосування не знайдено"
+            )
+        
+        results = []
+        total_votes = 0
+        
+        for option in poll.options:
+            votes_count = db.query(Vote).filter(
+                Vote.option_id == option.id
+            ).count()
+            total_votes += votes_count
+            results.append({
+                "option_id": option.id,
+                "text": option.text,
+                "votes": votes_count
+            })
+        
+        for result in results:
+            result["percentage"] = round(
+                (result["votes"] / total_votes * 100) if total_votes > 0 else 0,
+                1
+            )
+        
+        return {
+            "poll_id": poll.id,
+            "title": poll.title,
+            "total_votes": total_votes,
+            "results": results
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Помилка при отриманні результатів: {str(e)}"
+        )
+@app.get("/archive")
+async def archive_page(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    try:
+        current_user = await get_current_user(request)
+        archived_polls = await get_archived_polls(db)
+        
+        return templates.TemplateResponse(
+            "archive.html",
+            {
+                "request": request,
+                "title": "Архів голосувань",
+                "current_user": current_user,
+                "polls": archived_polls
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error rendering archive page: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/polls/archived")
+async def get_archived_polls(
+    db: Session = Depends(get_db)
+):
+    try:
+        archived_polls = db.query(Poll).filter(
+            Poll.is_active == False
+        ).order_by(Poll.created_at.desc()).all()
+        
+        polls_data = []
+        for poll in archived_polls:
+            total_votes = db.query(Vote).filter(
+                Vote.poll_id == poll.id
+            ).count()
+            
+            polls_data.append({
+                "id": poll.id,
+                "title": poll.title,
+                "description": poll.description,
+                "created_at": poll.created_at,
+                "ends_at": poll.ends_at,
+                "total_votes": total_votes
+            })
+        
+        return polls_data
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Помилка при отриманні архіву: {str(e)}"
+        )
 
 @app.get("/admin")
 async def admin_panel(

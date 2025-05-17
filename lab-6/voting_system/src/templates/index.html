@@ -3,135 +3,119 @@
 {% block content %}
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>{{ title }}</h1>
-        {% if current_user %}
-            <div class="d-flex align-items-center">
-                <span class="me-3">
-                    <i class="bi bi-person-circle me-2"></i>
-                    Вітаємо, {{ current_user.username }}!
-                </span>
-                <a href="/logout" class="btn btn-outline-danger">
-                    <i class="bi bi-box-arrow-right me-2"></i>
-                    Вийти
-                </a>
-            </div>
-        {% else %}
-            <a href="/login" class="btn btn-primary">
-                <i class="bi bi-box-arrow-in-right me-2"></i>
-                Увійти
-            </a>
-        {% endif %}
-    </div>
-
-    <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>
-            <i class="bi bi-check-square me-2"></i>
+            <i class="bi bi-check2-square me-2"></i>
             Активні голосування
         </h2>
         {% if current_user and current_user.is_admin %}
-            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createPollModal">
-                <i class="bi bi-plus-lg me-2"></i>
-                Створити голосування
-            </button>
+        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createPollModal">
+            <i class="bi bi-plus-lg me-2"></i>
+            Створити голосування
+        </button>
         {% endif %}
     </div>
 
-    {% if polls %}
-        <div class="row">
+    <div class="row">
+        {% if polls %}
             {% for poll in polls %}
-                <div class="col-md-6 mb-4">
-                    <div class="card h-100 shadow-sm">
-                        <div class="card-header d-flex justify-content-between align-items-center bg-light">
-                            <h5 class="card-title mb-0">{{ poll.title }}</h5>
-                            <div>
-                                {% if poll.is_active %}
-                                    <span class="badge bg-primary">
-                                        <i class="bi bi-clock me-1"></i>
-                                        Активне
-                                    </span>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="card-body">
-                            <p class="card-text text-muted mb-4">{{ poll.description }}</p>
-                            <form method="POST" action="/vote/{{ poll.id }}" class="poll-form">
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">{{ poll.title }}</h5>
+                        <span class="badge bg-primary">Активне</span>
+                    </div>
+                    <div class="card-body">
+                        {% if poll.description %}
+                        <p class="card-text text-muted mb-4">{{ poll.description }}</p>
+                        {% endif %}
+                        
+                        <form class="poll-form" data-poll-id="{{ poll.id }}">
+                            {% if poll.options %}
                                 {% for option in poll.options %}
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" 
-                                               type="{% if poll.allow_multiple %}checkbox{% else %}radio{% endif %}" 
-                                               name="option_id" 
-                                               value="{{ option.id }}" 
-                                               id="option{{ option.id }}"
-                                               {% if not current_user %}disabled{% endif %}>
-                                        <label class="form-check-label w-100" for="option{{ option.id }}">
+                                <div class="poll-option mb-3">
+                                    <div class="form-check">
+                                        <input type="radio" 
+                                               class="form-check-input" 
+                                               name="poll_option_{{ poll.id }}" 
+                                               id="option_{{ poll.id }}_{{ option.id }}" 
+                                               value="{{ option.id }}"
+                                               {% if not current_user or poll.user_voted %}disabled{% endif %}>
+                                        <label class="form-check-label" for="option_{{ poll.id }}_{{ option.id }}">
                                             {{ option.text }}
                                         </label>
                                     </div>
-                                {% endfor %}
-                                <div class="d-grid gap-2 mt-4">
-                                    <button type="submit" 
-                                            class="btn btn-primary"
-                                            {% if not current_user %}disabled{% endif %}>
-                                        <i class="bi bi-check2-circle me-2"></i>
-                                        Проголосувати
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                        <div class="card-footer bg-white">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <small class="text-muted">
-                                    <i class="bi bi-people me-2"></i>
-                                    Проголосувало: {{ poll.total_votes|default(0) }}
-                                </small>
-                                {% if current_user and current_user.is_admin %}
-                                    <div class="dropdown">
-                                        <button class="btn btn-light btn-sm" type="button" data-bs-toggle="dropdown">
-                                            <i class="bi bi-three-dots-vertical"></i>
-                                        </button>
-                                        <ul class="dropdown-menu dropdown-menu-end">
-                                            <li>
-                                                <a class="dropdown-item" href="/poll/{{ poll.id }}/results">
-                                                    <i class="bi bi-bar-chart-fill me-2"></i>
-                                                    Результати
-                                                </a>
-                                            </li>
-                                            <li>
-                                                <a class="dropdown-item" href="#" onclick="sharePoll('{{ poll.id }}')">
-                                                    <i class="bi bi-share me-2"></i>
-                                                    Поділитися
-                                                </a>
-                                            </li>
-                                            <li><hr class="dropdown-divider"></li>
-                                            <li>
-                                                <a class="dropdown-item text-danger" href="#" 
-                                                   onclick="deletePoll('{{ poll.id }}')">
-                                                    <i class="bi bi-trash me-2"></i>
-                                                    Видалити
-                                                </a>
-                                            </li>
-                                        </ul>
+                                    {% if poll.user_voted %}
+                                    <div class="progress mt-2" style="height: 4px;">
+                                        <div class="progress-bar" data-width="{{ '%.1f'|format(option.votes_percent) }}"></div>
                                     </div>
+                                    <small class="text-muted d-block mt-1">
+                                        {{ option.votes_count }} голосів ({{ '%.1f'|format(option.votes_percent) }}%)
+                                    </small>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="alert alert-warning">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>
+                                    Немає доступних варіантів для голосування
+                                </div>
+                            {% endif %}
+
+                            {% if current_user and not poll.user_voted %}
+                            <button type="submit" class="btn btn-primary w-100 mt-3">
+                                <i class="bi bi-check2-circle me-2"></i>
+                                Проголосувати
+                            </button>
+                            {% endif %}
+
+                            {% if poll.user_voted %}
+                            <div class="alert alert-success mt-3">
+                                <i class="bi bi-check2-circle me-2"></i>
+                                Ви вже проголосували
+                            </div>
+                            {% endif %}
+
+                            {% if not current_user %}
+                            <div class="alert alert-warning mt-3">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                Для голосування необхідно <a href="/login" class="alert-link">увійти</a>
+                            </div>
+                            {% endif %}
+                        </form>
+                    </div>
+                    <div class="card-footer bg-light">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">
+                                <i class="bi bi-people me-2"></i>
+                                Проголосувало: {{ poll.total_votes }}
+                            </small>
+                            <div class="btn-group">
+                                <a href="/poll/{{ poll.id }}/results" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-bar-chart-fill me-2"></i>
+                                    Результати
+                                </a>
+                                {% if current_user and current_user.is_admin %}
+                                <button type="button" 
+                                        class="btn btn-sm btn-outline-danger"
+                                        onclick="deletePoll('{{ poll.id }}')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
                                 {% endif %}
                             </div>
                         </div>
                     </div>
                 </div>
-            {% endfor %}
-        </div>
-    {% else %}
-        <div class="alert alert-info d-flex align-items-center">
-            <i class="bi bi-info-circle-fill me-2"></i>
-            <div>
-                Наразі немає активних голосувань.
-                {% if current_user and current_user.is_admin %}
-                    <a href="#" class="alert-link ms-2" data-bs-toggle="modal" data-bs-target="#createPollModal">
-                        Створити нове голосування
-                    </a>
-                {% endif %}
             </div>
-        </div>
-    {% endif %}
+            {% endfor %}
+        {% else %}
+            <div class="col-12">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Наразі немає активних голосувань
+                </div>
+            </div>
+        {% endif %}
+    </div>
 </div>
 
 {% if current_user and current_user.is_admin %}
@@ -152,8 +136,8 @@
                         <input type="text" class="form-control" name="title" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Опис</label>
-                        <textarea class="form-control" name="description" rows="3" required></textarea>
+                        <label class="form-label">Опис (необов'язково)</label>
+                        <textarea class="form-control" name="description" rows="3"></textarea>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Варіанти відповідей</label>
@@ -170,150 +154,194 @@
                             Додати варіант
                         </button>
                     </div>
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" name="allow_multiple" id="allowMultiple">
-                        <label class="form-check-label" for="allowMultiple">
-                            Дозволити вибір кількох варіантів
-                        </label>
-                    </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
-                <button type="button" class="btn btn-primary" onclick="createPoll()">
-                    <i class="bi bi-check2 me-2"></i>
-                    Створити
-                </button>
+                <button type="button" class="btn btn-primary" onclick="createPoll()">Створити</button>
             </div>
         </div>
     </div>
 </div>
 {% endif %}
-{% endblock %}
+{% endblock content %}
 
 {% block scripts %}
 <script>
-    function addOption() {
-        const container = document.getElementById('optionsContainer');
-        const newOption = document.createElement('div');
-        newOption.className = 'input-group mb-2';
-        newOption.innerHTML = `
-            <input type="text" class="form-control" name="options[]" required>
-            <button type="button" class="btn btn-outline-danger" onclick="removeOption(this)">
-                <i class="bi bi-trash"></i>
-            </button>
-        `;
-        container.appendChild(newOption);
+async function deletePoll(pollId) {
+    if (!confirm('Ви впевнені, що хочете видалити це опитування?')) {
+        return;
     }
-
-    function removeOption(button) {
-        const container = document.getElementById('optionsContainer');
-        if (container.children.length > 1) {
-            button.closest('.input-group').remove();
+    
+    try {
+        const response = await fetch(`/api/polls/${pollId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-success';
+            alertDiv.innerHTML = `
+                <i class="bi bi-check-circle me-2"></i>
+                ${data.message}
+            `;
+            document.querySelector('.container').insertBefore(
+                alertDiv,
+                document.querySelector('.container').firstChild
+            );
+            
+            const pollCard = document.querySelector(`[data-poll-id="${pollId}"]`);
+            if (pollCard) {
+                pollCard.remove();
+            }
+            
+            setTimeout(() => {
+                location.reload();
+            }, 1500);
         } else {
-            alert('Повинен бути хоча б один варіант відповіді');
+            throw new Error(data.detail || 'Помилка при видаленні');
         }
+    } catch (error) {
+        console.error('Error:', error);
+        alert(error.message || 'Помилка при видаленні опитування');
     }
+}
 
-    function createPoll() {
-        const form = document.getElementById('createPollForm');
-        const formData = new FormData(form);
-        
-        const options = Array.from(formData.getAll('options[]'))
-            .filter(option => option.trim() !== '')
-            .map(text => ({ text }));
-        
-        if (options.length < 2) {
-            alert('Додайте хоча б два варіанти відповіді');
-            return;
-        }
-        
-        const pollData = {
-            title: formData.get('title'),
-            description: formData.get('description'),
-            allow_multiple: formData.get('allow_multiple') === 'on',
-            options: options,
-            is_active: true
-        };
-        
-        fetch('/api/polls', {
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.poll-form').forEach(form => {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const pollId = form.dataset.pollId;
+            const selectedOption = form.querySelector(`input[name="poll_option_${pollId}"]:checked`);
+            
+            if (!selectedOption) {
+                showMessage('Виберіть варіант відповіді', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/vote', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        poll_id: parseInt(pollId),
+                        option_id: parseInt(selectedOption.value)
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showMessage('Дякуємо за ваш голос!', 'success');
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showMessage(data.detail || 'Помилка при голосуванні', 'danger');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showMessage('Помилка при голосуванні', 'danger');
+            }
+        });
+    });
+    document.querySelectorAll('.progress-bar').forEach(bar => {
+        const width = bar.dataset.width;
+        bar.style.width = `${width}%`;
+    });
+});
+
+function addOption() {
+    const container = document.getElementById('optionsContainer');
+    const newOption = document.createElement('div');
+    newOption.className = 'input-group mb-2';
+    newOption.innerHTML = `
+        <input type="text" class="form-control" name="options[]" required>
+        <button type="button" class="btn btn-outline-danger" onclick="removeOption(this)">
+            <i class="bi bi-trash"></i>
+        </button>
+    `;
+    container.appendChild(newOption);
+}
+
+function removeOption(button) {
+    const container = document.getElementById('optionsContainer');
+    if (container.children.length > 1) {
+        button.closest('.input-group').remove();
+    } else {
+        showMessage('Повинен бути хоча б один варіант відповіді', 'warning');
+    }
+}
+
+async function createPoll() {
+    const form = document.getElementById('createPollForm');
+    const formData = new FormData(form);
+    
+    const options = Array.from(formData.getAll('options[]'))
+        .filter(option => option.trim() !== '')
+        .map(text => ({ text }));
+    
+    if (options.length < 2) {
+        showMessage('Додайте хоча б два варіанти відповіді', 'warning');
+        return;
+    }
+    
+    const pollData = {
+        title: formData.get('title'),
+        description: formData.get('description'),
+        options: options
+    };
+    
+    try {
+        const response = await fetch('/api/polls', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(pollData)
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                location.reload();
-            } else {
-                alert(data.message || 'Помилка при створенні голосування');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Виникла помилка при створенні голосування');
         });
-    }
-
-    function deletePoll(pollId) {
-        if (confirm('Ви впевнені, що хочете видалити це голосування?')) {
-            fetch(`/api/polls/${pollId}`, {
-                method: 'DELETE'
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert(data.message || 'Помилка при видаленні голосування');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Виникла помилка при видаленні голосування');
-            });
-        }
-    }
-
-    function sharePoll(pollId) {
-        const url = `${window.location.origin}/poll/${pollId}`;
-        if (navigator.share) {
-            navigator.share({
-                title: 'Голосування',
-                url: url
-            });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showMessage('Голосування створено!', 'success');
+            setTimeout(() => location.reload(), 1500);
         } else {
-            navigator.clipboard.writeText(url)
-                .then(() => alert('Посилання скопійовано в буфер обміну'))
-                .catch(() => alert('Не вдалося скопіювати посилання'));
+            showMessage(data.detail || 'Помилка при створенні голосування', 'danger');
         }
+    } catch (error) {
+        console.error('Error:', error);
+        showMessage('Помилка при створенні голосування', 'danger');
     }
+}
 
-    document.querySelectorAll('.poll-form').forEach(form => {
-        form.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const pollId = this.closest('.card').dataset.pollId;
-            const formData = new FormData(this);
-            
-            fetch(`/api/vote/${pollId}`, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    this.innerHTML = '<div class="alert alert-success">Дякуємо за ваш голос!</div>';
-                } else {
-                    alert(data.message || 'Помилка при голосуванні');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Виникла помилка при голосуванні');
-            });
+async function deletePoll(pollId) {
+    if (!confirm('Ви впевнені, що хочете видалити це голосування?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/polls/${pollId}`, {
+            method: 'DELETE'
         });
-    });
+        
+        if (response.ok) {
+            showMessage('Голосування видалено', 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            const data = await response.json();
+            showMessage(data.detail || 'Помилка при видаленні', 'danger');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showMessage('Помилка при видаленні', 'danger');
+    }
+}
 </script>
-{% endblock %}
+{% endblock scripts %}

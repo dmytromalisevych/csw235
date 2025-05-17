@@ -18,18 +18,25 @@ class PollOption(PollOptionBase):
 
 class PollBase(BaseModel):
     title: str
-    description: str
-    ends_at: Optional[datetime] = None
+    description: Optional[str] = None
+    is_active: bool = True
     allow_multiple: bool = False
+    ends_at: Optional[datetime] = None
 
+class PollCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    allow_multiple: bool = False
+    options: List[PollOptionCreate]
+    
 class PollCreate(PollBase):
-    options: List[str]
+    pass
 
 class Poll(PollBase):
     id: int
     created_at: datetime
     is_active: bool
-    created_by: int
+    created_by: int 
     options: List[PollOption]
     total_votes: Optional[int] = 0
 

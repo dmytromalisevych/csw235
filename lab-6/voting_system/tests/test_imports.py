@@ -3,7 +3,6 @@ from schemas.poll_schema import PollCreate,PollResponse
 import sys
 
 
-# Додаємо шлях до src
 current_dir = Path(__file__).resolve().parent
 sys.path.append(str(current_dir))
 
@@ -15,7 +14,6 @@ try:
     from schemas.poll_schema import PollCreate
     print("Import successful!")
     
-    # Тестуємо створення об'єкту
     test_data = {
         "title": "Test",
         "description": "Test Description",

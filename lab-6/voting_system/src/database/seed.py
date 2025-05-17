@@ -35,7 +35,6 @@ def seed_database():
         db.add_all([admin, user1])
         db.commit()
 
-        # Створення голосувань
         polls = [
             Poll(
                 title="Найкраща мова програмування",

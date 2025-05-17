@@ -128,3 +128,41 @@ async function submitVote(pollId) {
         alert('Виникла помилка при спробі проголосувати');
     }
 }
+document.querySelectorAll('.poll-form').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const pollId = form.dataset.pollId;
+        const selectedOption = form.querySelector('input[type="radio"]:checked');
+        
+        if (!selectedOption) {
+            alert('Виберіть варіант відповіді');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/vote', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    poll_id: parseInt(pollId),
+                    option_id: parseInt(selectedOption.value)
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                alert('Дякуємо за ваш голос!');
+                location.reload();
+            } else {
+                alert(data.detail || 'Помилка при голосуванні');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Помилка при голосуванні');
+        }
+    });
+});
