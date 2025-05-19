@@ -104,26 +104,31 @@ async def get_current_user(request: Request):
     except:
         return None
 
+def get_poll_details(poll_id: int, db: Session):
+
+    poll = db.query(Poll).filter(Poll.id == poll_id).first()
+    if not poll:
+        raise HTTPException(status_code=404, detail="Poll not found")
+
+    options_with_votes = []
+    total_votes = 0
+    for option in poll.options:
+        votes_count = db.query(Vote).filter(Vote.option_id == option.id).count()
+        total_votes += votes_count
+        options_with_votes.append({
+            "id": option.id,
+            "text": option.text,
+            "votes": votes_count,
+            "percentage": round((votes_count / total_votes * 100) if total_votes > 0 else 0, 1)
+        })
+
+    return poll, options_with_votes, total_votes
+
 @app.get("/poll/{poll_id}/results")
 async def poll_results(request: Request, poll_id: int, db: Session = Depends(get_db)):
     try:
-        poll = db.query(Poll).filter(Poll.id == poll_id).first()
-        if not poll:
-            raise HTTPException(status_code=404, detail="Голосування не знайдено")
-        
-        options_with_votes = []
-        total_votes = 0
-        
-        for option in poll.options:
-            votes_count = db.query(Vote).filter(Vote.option_id == option.id).count()
-            total_votes += votes_count
-            options_with_votes.append({
-                "id": option.id,
-                "text": option.text,
-                "votes": votes_count,
-                "percentage": round((votes_count / total_votes * 100) if total_votes > 0 else 0, 1)
-            })
-        
+        poll, options_with_votes, total_votes = get_poll_details(poll_id, db)
+
         return templates.TemplateResponse(
             "poll_results.html",
             {
@@ -139,6 +144,7 @@ async def poll_results(request: Request, poll_id: int, db: Session = Depends(get
     except Exception as e:
         logger.error(f"Error showing poll results: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
     
 @app.delete("/api/polls/{poll_id}")
 async def delete_poll(
