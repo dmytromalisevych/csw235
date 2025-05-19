@@ -85,4 +85,9 @@ poll_data = {
 - **Auth:** JWT, bcrypt
 - **Візуалізація:** Chart.js
 
+## К-ть коду в проєкті
+
+<img width="564" alt="Знімок екрана 2025-05-19 о 17 42 59" src="https://github.com/user-attachments/assets/a877e427-68b8-46c5-8246-ad8787970ccb" />
+
+
 
